@@ -1,14 +1,6 @@
-const STORAGE = {
-  sessions: 'rsm-sessions',
-  queue: 'rsm-sync-queue',
-  audit: 'rsm-audit-log'
-};
-
+const STORAGE = { sessions: 'rsm-sessions', queue: 'rsm-sync-queue', audit: 'rsm-audit-log' };
 const id = () => globalThis.crypto?.randomUUID?.() || `evt-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-const read = (key, fallback) => {
-  try { return JSON.parse(localStorage.getItem(key) || JSON.stringify(fallback)); }
-  catch { return fallback; }
-};
+const read = (key, fallback) => { try { return JSON.parse(localStorage.getItem(key) || JSON.stringify(fallback)); } catch { return fallback; } };
 const write = (key, value) => localStorage.setItem(key, JSON.stringify(value));
 
 export class CuratedRepository {
@@ -21,30 +13,21 @@ export class CuratedRepository {
     write(STORAGE.sessions, data.sessions);
     return data.sessions;
   }
-
   saveSessions(sessions) { write(STORAGE.sessions, sessions); }
-
   queueMutation(mutation) {
     const queue = read(STORAGE.queue, []);
-    queue.push({ ...mutation, id: id(), queuedAt: new Date().toISOString() });
+    const queued = { ...mutation, id: mutation.id || id(), queuedAt: new Date().toISOString(), attempts: 0, status: 'pending' };
+    if (!queue.some(item => item.id === queued.id)) queue.push(queued);
     write(STORAGE.queue, queue);
-    return queue;
+    return queued;
   }
-
   getQueue() { return read(STORAGE.queue, []); }
+  acknowledgeMutation(mutationId) { write(STORAGE.queue, this.getQueue().filter(item => item.id !== mutationId)); }
+  markMutationFailed(mutationId, error) { write(STORAGE.queue, this.getQueue().map(item => item.id === mutationId ? { ...item, attempts: item.attempts + 1, status: 'failed', lastError: String(error), lastAttemptAt: new Date().toISOString() } : item)); }
+  // Kept for development reset only; production sync must acknowledge individual successes.
   clearQueue() { write(STORAGE.queue, []); }
-
-  appendAudit(entry) {
-    const audit = read(STORAGE.audit, []);
-    audit.push({ ...entry, id: id(), timestamp: new Date().toISOString() });
-    write(STORAGE.audit, audit);
-  }
-
+  appendAudit(entry) { const audit = read(STORAGE.audit, []); audit.push({ ...entry, id: id(), timestamp: new Date().toISOString() }); write(STORAGE.audit, audit); }
   getAudit() { return read(STORAGE.audit, []); }
 }
 
-// The live provider will implement the same contract against Dataverse Web API.
-// Keeping the provider boundary here lets R1 run entirely on the governed export.
-export function createRepository() {
-  return new CuratedRepository();
-}
+export function createRepository() { return new CuratedRepository(); }
