@@ -4,17 +4,17 @@ Offline-first host and Hub experience for the RSM Classic.
 
 ## Current slice
 
-The `feature/hub-arrival-vertical-slice` branch contains a curated-data Hub arrival workflow:
+The `feature/hub-arrival-vertical-slice` branch now contains:
 
-- Session schedule and reset-aware cadence display
-- Participant presence confirmation
-- Consent-gated recording state
-- Offline persistence and queued mutations
-- Audit entries for arrival activation
-- Service-worker caching for the arrival path
-- A repository boundary ready for Dataverse Web API integration
+- Curated-data Hub arrival console
+- Participant presence and consent capture
+- Durable offline mutation queue and local audit log
+- Hub Session View with dossier, route and capture tabs
+- Provenance labels for confirmed, to-verify and client-stated facts
+- Planned-route-primary presentation
+- Service-worker caching for the arrival and session views
 
-Open `index.html` from a local web server (ES modules and service workers require HTTP):
+Run locally with a web server because ES modules and service workers require HTTP:
 
 ```bash
 python3 -m http.server 8080
@@ -22,12 +22,8 @@ python3 -m http.server 8080
 
 Then visit `http://localhost:8080`.
 
-## Data and sync boundary
+## Scope boundary
 
-`data-access.js` defines the R1 repository contract. `CuratedRepository` is the governed export provider used now. A Dataverse provider should implement the same methods and be selected by configuration once the table contract and authentication details are available.
+`data-access.js` is the repository contract. `CuratedRepository` is the governed export provider used by R1. The next provider will target Dataverse Web API and must preserve append-only intelligence writes, idempotent mutations, role checks and server-side audit persistence.
 
-Queued mutations are intentionally not silently discarded. The current prototype clears them only at the explicit sync seam and reports how many are ready for the future Dataverse batch operation.
-
-## Next build slice
-
-Implement the Hub Session View and Live Client Dossier on the same repository contract, then add an authenticated Dataverse provider and server-side audit persistence.
+The current UI is intentionally a prototype: quick notes and commitments are surfaced in the capture view but are not yet persisted. Those are part of the next capture/closeout slice.

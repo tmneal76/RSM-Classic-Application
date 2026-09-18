@@ -1,98 +1,24 @@
 import { createRepository } from './data-access.js';
 
 const repository = createRepository();
-const state = { sessions: [], search: '', filter: 'all', pending: repository.getQueue() };
+const state = { sessions: [], search: '', filter: 'all', pending: repository.getQueue(), activeSession: null };
 const $ = selector => document.querySelector(selector);
-const escapeHtml = value => String(value).replace(/[&<>"']/g, char => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#039;' }[char]));
+const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#039;' }[char]));
 const isArrived = session => session.status === 'arrived';
-const announce = message => {
-  const toast = $('#toast');
-  toast.textContent = message;
-  toast.classList.add('show');
-  window.setTimeout(() => toast.classList.remove('show'), 3200);
-};
-
-function persist() {
-  repository.saveSessions(state.sessions);
-  state.pending = repository.getQueue();
-  updateMetrics();
-}
-
-function updateMetrics() {
-  $('#readyCount').textContent = state.sessions.length;
-  $('#arrivedCount').textContent = state.sessions.filter(isArrived).length;
-  $('#syncCount').textContent = state.pending.length;
-  const next = state.sessions.find(session => !isArrived(session));
-  $('#nextCountdown').textContent = next?.start || '—';
-}
-
-function render() {
-  const query = state.search.toLowerCase();
-  const sessions = state.sessions.filter(session => {
-    const statusMatches = state.filter === 'all' || (state.filter === 'arrived' ? isArrived(session) : !isArrived(session));
-    return statusMatches && (!query || session.organization.toLowerCase().includes(query));
-  });
-  $('#sessionList').innerHTML = sessions.length ? sessions.map(sessionCard).join('') : '<div class="empty">No sessions match this view.</div>';
-  updateMetrics();
-}
-
-function sessionCard(session) {
-  const arrived = isArrived(session);
-  return `<article class="session-card"><div class="time">${escapeHtml(session.start)}<small>until ${escapeHtml(session.end)}</small></div><div class="session-main"><h2>${escapeHtml(session.organization)}</h2><p class="session-meta">${escapeHtml(session.sessionType)} · ${session.participants.length} expected participant${session.participants.length === 1 ? '' : 's'} · Host: ${escapeHtml(session.host)}</p><div class="chips">${session.route.map(zone => `<span class="chip">${escapeHtml(zone)}</span>`).join('')} ${arrived ? '<span class="chip arrived">Arrived</span>' : ''}</div></div><div class="session-action"><span class="status-label">${arrived ? 'Session activated' : 'Prep-ready'}</span><button class="button ${arrived ? 'secondary' : ''}" data-session="${session.id}">${arrived ? 'View arrival' : 'Check in'}</button></div></article>`;
-}
-
-function openArrival(id) {
-  const session = state.sessions.find(item => item.id === id);
-  if (!session) return;
-  const arrived = isArrived(session);
-  $('#modalRoot').innerHTML = `<div class="modal-backdrop" role="presentation"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle"><div class="modal-header"><div><p class="eyebrow">${escapeHtml(session.start)} · ${escapeHtml(session.sessionType)}</p><h2 id="modalTitle">${escapeHtml(session.organization)}</h2><p class="muted">Assigned host: ${escapeHtml(session.host)} · Relationship Lead: ${escapeHtml(session.relationshipLead)}</p></div><button class="close" aria-label="Close">×</button></div><div class="arrival-card"><strong>Arrival details</strong><p>Preferred beverage: ${escapeHtml(session.preferredBeverage)}</p><p>Accessibility: ${escapeHtml(session.accessibility)}</p><p>Purpose: ${escapeHtml(session.purpose)}</p></div><h3>Participants present</h3><div>${session.participants.map(person => `<label class="participant"><span><p><strong>${escapeHtml(person.preferredName || person.name)}</strong></p><small>${escapeHtml(person.title)}</small></span><span class="check"><input type="checkbox" data-participant="${person.id}" ${person.arrived ? 'checked' : ''} ${arrived ? 'disabled' : ''}/> Present</span></label>`).join('')}</div>${!arrived ? '<div class="consent"><h3>Recording consent</h3><label><input id="consent" type="checkbox" /> Permission granted for assisted notes and transcription for this session</label><p class="muted">If declined, capture remains disabled and the session continues normally.</p></div>' : `<div class="consent"><h3>Consent status</h3><p class="muted">${session.consent?.status === 'granted' ? 'Consent granted for assisted notes and transcription.' : 'No recording consent. Capture remains disabled.'}</p></div>`}<div class="modal-actions"><button class="button secondary close">Cancel</button>${arrived ? '' : '<button class="button" id="activateButton">Activate session</button>'}</div></section></div>`;
-  $('#modalRoot').querySelectorAll('.close').forEach(button => button.addEventListener('click', closeModal));
-  if (!arrived) $('#activateButton').addEventListener('click', () => activateSession(session));
-}
-
-function activateSession(session) {
-  if (isArrived(session)) return announce('This session is already active.');
-  const selected = [...document.querySelectorAll('[data-participant]:checked')];
-  if (!selected.length) return announce('Confirm at least one participant is present.');
-  session.participants.forEach(person => { person.arrived = selected.some(input => input.dataset.participant === person.id); });
-  session.status = 'arrived';
-  session.arrival = { checkedInAt: new Date().toISOString(), checkedInBy: 'Gallery Concierge' };
-  session.consent = $('#consent')?.checked
-    ? { status: 'granted', scope: 'assisted-notes-and-transcription', capturedAt: new Date().toISOString(), capturedBy: 'Gallery Concierge' }
-    : { status: 'declined', scope: 'none', capturedAt: new Date().toISOString(), capturedBy: 'Gallery Concierge' };
-  const mutation = { type: 'session.arrival.activate', aggregateId: session.id, payload: { arrival: session.arrival, consent: session.consent, participants: session.participants } };
-  repository.queueMutation(mutation);
-  repository.appendAudit({ action: 'arrival.activate', recordType: 'Session', recordId: session.id, actor: 'Gallery Concierge', offline: !navigator.onLine });
-  persist();
-  closeModal();
-  render();
-  announce(session.consent.status === 'granted' ? 'Session activated · consent recorded · host alerted' : 'Session activated · no recording · host alerted');
-  if (navigator.onLine) flushQueue();
-}
-
-function closeModal() { $('#modalRoot').innerHTML = ''; }
-
-function flushQueue() {
-  if (!navigator.onLine || !state.pending.length) return;
-  const count = state.pending.length;
-  // This is the sync seam: replace with Dataverse batch POST when the contract is available.
-  repository.clearQueue();
-  state.pending = [];
-  updateMetrics();
-  announce(`${count} queued update${count === 1 ? '' : 's'} ready for Dataverse sync`);
-}
-
-async function init() {
-  try { state.sessions = await repository.loadSessions(); }
-  catch { state.sessions = []; announce('Curated data could not be loaded.'); }
-  render();
-  $('#searchInput').addEventListener('input', event => { state.search = event.target.value; render(); });
-  $('#filterSelect').addEventListener('change', event => { state.filter = event.target.value; render(); });
-  $('#sessionList').addEventListener('click', event => { const button = event.target.closest('[data-session]'); if (button) openArrival(button.dataset.session); });
-  $('#neutralButton').addEventListener('click', () => { document.body.classList.toggle('neutral'); announce('Neutral screen toggle ready for host discretion'); });
-  window.addEventListener('online', () => { $('#connectionLabel').textContent = 'Connected'; $('#connectionDot').classList.add('online'); flushQueue(); });
-  window.addEventListener('offline', () => { $('#connectionLabel').textContent = 'Offline-ready'; $('#connectionDot').classList.remove('online'); });
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
-}
-
+const announce = message => { const toast = $('#toast'); toast.textContent = message; toast.classList.add('show'); window.setTimeout(() => toast.classList.remove('show'), 3200); };
+function persist() { repository.saveSessions(state.sessions); state.pending = repository.getQueue(); updateMetrics(); }
+function updateMetrics() { $('#readyCount').textContent = state.sessions.length; $('#arrivedCount').textContent = state.sessions.filter(isArrived).length; $('#syncCount').textContent = state.pending.length; const next = state.sessions.find(session => !isArrived(session)); $('#nextCountdown').textContent = next?.start || '—'; }
+function render() { const query = state.search.toLowerCase(); const sessions = state.sessions.filter(session => { const statusMatches = state.filter === 'all' || (state.filter === 'arrived' ? isArrived(session) : !isArrived(session)); return statusMatches && (!query || session.organization.toLowerCase().includes(query)); }); $('#sessionList').innerHTML = sessions.length ? sessions.map(sessionCard).join('') : '<div class="empty">No sessions match this view.</div>'; updateMetrics(); }
+function sessionCard(session) { const arrived = isArrived(session); return `<article class="session-card"><div class="time">${escapeHtml(session.start)}<small>until ${escapeHtml(session.end)}</small></div><div class="session-main"><h2>${escapeHtml(session.organization)}</h2><p class="session-meta">${escapeHtml(session.sessionType)} · ${session.participants.length} expected participant${session.participants.length === 1 ? '' : 's'} · Host: ${escapeHtml(session.host)}</p><div class="chips">${session.route.map(zone => `<span class="chip">${escapeHtml(zone)}</span>`).join('')} ${arrived ? '<span class="chip arrived">Arrived</span>' : ''}</div></div><div class="session-action"><span class="status-label">${arrived ? 'Session activated' : 'Prep-ready'}</span><button class="button ${arrived ? 'secondary' : ''}" data-session="${session.id}">${arrived ? 'Open session' : 'Check in'}</button></div></article>`; }
+function closeModal() { $('#modalRoot').innerHTML = ''; state.activeSession = null; }
+function modalShell(content, title = 'Session') { $('#modalRoot').innerHTML = `<div class="modal-backdrop" role="presentation"><section class="modal modal-wide" role="dialog" aria-modal="true" aria-labelledby="modalTitle">${content}</section></div>`; $('#modalRoot').querySelectorAll('.close').forEach(button => button.addEventListener('click', closeModal)); }
+function openArrival(id) { const session = state.sessions.find(item => item.id === id); if (!session) return; state.activeSession = session; if (isArrived(session)) return openSessionView(session); modalShell(`<div class="modal-header"><div><p class="eyebrow">${escapeHtml(session.start)} · ${escapeHtml(session.sessionType)}</p><h2 id="modalTitle">${escapeHtml(session.organization)}</h2><p class="muted">Assigned host: ${escapeHtml(session.host)} · Relationship Lead: ${escapeHtml(session.relationshipLead)}</p></div><button class="close" aria-label="Close">×</button></div><div class="arrival-card"><strong>Arrival details</strong><p>Preferred beverage: ${escapeHtml(session.preferredBeverage)}</p><p>Accessibility: ${escapeHtml(session.accessibility)}</p><p>Purpose: ${escapeHtml(session.purpose)}</p></div><h3>Participants present</h3><div>${session.participants.map(person => `<label class="participant"><span><p><strong>${escapeHtml(person.preferredName || person.name)}</strong></p><small>${escapeHtml(person.title)}</small></span><span class="check"><input type="checkbox" data-participant="${person.id}" ${person.arrived ? 'checked' : ''}/> Present</span></label>`).join('')}</div><div class="consent"><h3>Recording consent</h3><label><input id="consent" type="checkbox" /> Permission granted for assisted notes and transcription for this session</label><p class="muted">If declined, capture remains disabled and the session continues normally.</p></div><div class="modal-actions"><button class="button secondary close">Cancel</button><button class="button" id="activateButton">Activate session</button></div>`); $('#activateButton').addEventListener('click', () => activateSession(session)); }
+function activateSession(session) { const selected = [...document.querySelectorAll('[data-participant]:checked')]; if (!selected.length) return announce('Confirm at least one participant is present.'); session.participants.forEach(person => { person.arrived = selected.some(input => input.dataset.participant === person.id); }); session.status = 'arrived'; session.arrival = { checkedInAt: new Date().toISOString(), checkedInBy: 'Gallery Concierge' }; session.consent = $('#consent')?.checked ? { status: 'granted', scope: 'assisted-notes-and-transcription', capturedAt: new Date().toISOString(), capturedBy: 'Gallery Concierge' } : { status: 'declined', scope: 'none', capturedAt: new Date().toISOString(), capturedBy: 'Gallery Concierge' }; repository.queueMutation({ type: 'session.arrival.activate', aggregateId: session.id, payload: { arrival: session.arrival, consent: session.consent, participants: session.participants } }); repository.appendAudit({ action: 'arrival.activate', recordType: 'Session', recordId: session.id, actor: 'Gallery Concierge', offline: !navigator.onLine }); persist(); closeModal(); render(); announce(session.consent.status === 'granted' ? 'Session activated · consent recorded · host alerted' : 'Session activated · no recording · host alerted'); if (navigator.onLine) flushQueue(); }
+function provenance(fact) { return `<span class="provenance ${escapeHtml(fact.state)}"><b>${escapeHtml(fact.state)}</b> · ${escapeHtml(fact.source)} · ${escapeHtml(fact.asOf)}${fact.validator ? ` · ${escapeHtml(fact.validator)}` : ''}</span>`; }
+function openSessionView(session) { const dossier = session.dossier || {}; modalShell(`<div class="modal-header"><div><p class="eyebrow">Hub Session View · ${escapeHtml(session.start)}–${escapeHtml(session.end)}</p><h2 id="modalTitle">${escapeHtml(session.organization)}</h2><p class="muted">${escapeHtml(session.sessionType)} · Host ${escapeHtml(session.host)} · ${session.consent?.status === 'granted' ? 'Assisted capture permitted' : 'No recording'}</p></div><button class="close" aria-label="Close">×</button></div><div class="session-tabs"><button class="tab active" data-tab="dossier">Live client dossier</button><button class="tab" data-tab="path">Planned path</button><button class="tab" data-tab="capture">Capture status</button></div><div id="sessionPanel">${dossierPanel(session, dossier)}</div>`); $('#modalRoot').querySelectorAll('[data-tab]').forEach(tab => tab.addEventListener('click', () => { $('#modalRoot').querySelectorAll('.tab').forEach(item => item.classList.remove('active')); tab.classList.add('active'); const panel = $('#sessionPanel'); panel.innerHTML = tab.dataset.tab === 'dossier' ? dossierPanel(session, dossier) : tab.dataset.tab === 'path' ? pathPanel(session) : capturePanel(session); })); }
+function dossierPanel(session, dossier) { return `<div class="dossier-grid"><div><section class="dossier-card"><h3>Relationship context</h3><dl><dt>Industry</dt><dd>${escapeHtml(dossier.industry?.value)} ${dossier.industry ? provenance(dossier.industry) : ''}</dd><dt>Last contact</dt><dd>${escapeHtml(dossier.lastContact)} <span class="provenance confirmed">source: CRM activity</span></dd><dt>Services held</dt><dd>${(dossier.services || []).map(item => `<span class="chip">${escapeHtml(item)}</span>`).join(' ')}</dd></dl></section><section class="dossier-card"><h3>Business priorities</h3><ul>${(dossier.priorities || []).map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul></section></div><div><section class="dossier-card"><h3>Talking points</h3><ul>${(dossier.talkingPoints || []).map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul></section><section class="dossier-card gap-card"><h3>To verify in calibration</h3><ul>${(dossier.gaps || []).map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul></section><p class="restricted"><strong>Restricted:</strong> topics to avoid are visible only to the assigned host and Relationship Lead.</p></div></div>`; }
+function pathPanel(session) { return `<section class="dossier-card"><div class="panel-heading"><div><h3>Planned route remains primary</h3><p class="muted">Record client-stated changes during calibration; suggestions never replace this sequence.</p></div><span class="chip">${session.route.length} planned zones</span></div><ol class="route-list">${session.route.map((zone, index) => `<li><span class="route-number">${index + 1}</span><div><strong>${escapeHtml(zone)}</strong><small>Planned step · pending</small></div></li>`).join('')}</ol><button class="button secondary" id="recordPriority">Record client-stated priority</button></section>`; }
+function capturePanel(session) { return `<section class="dossier-card"><h3>Capture status</h3><div class="capture-state ${session.consent?.status === 'granted' ? 'enabled' : 'disabled'}"><strong>${session.consent?.status === 'granted' ? 'Assisted capture enabled' : 'No-recording path active'}</strong><p>${session.consent?.status === 'granted' ? 'Notes and transcript may be captured with Insight Steward validation.' : 'Voice capture is disabled. Continue with manual notes and normal hospitality.'}</p></div><div class="capture-actions"><button class="button secondary" id="quickNote">Add quick note</button><button class="button secondary" id="addCommitment">Add commitment</button></div></section>`; }
+function flushQueue() { if (!navigator.onLine || !state.pending.length) return; const count = state.pending.length; repository.clearQueue(); state.pending = []; updateMetrics(); announce(`${count} queued update${count === 1 ? '' : 's'} ready for Dataverse sync`); }
+async function init() { try { state.sessions = await repository.loadSessions(); } catch { state.sessions = []; announce('Curated data could not be loaded.'); } render(); $('#searchInput').addEventListener('input', event => { state.search = event.target.value; render(); }); $('#filterSelect').addEventListener('change', event => { state.filter = event.target.value; render(); }); $('#sessionList').addEventListener('click', event => { const button = event.target.closest('[data-session]'); if (button) openArrival(button.dataset.session); }); $('#neutralButton').addEventListener('click', () => { document.body.classList.toggle('neutral'); announce('Neutral screen toggle ready for host discretion'); }); window.addEventListener('online', () => { $('#connectionLabel').textContent = 'Connected'; $('#connectionDot').classList.add('online'); flushQueue(); }); window.addEventListener('offline', () => { $('#connectionLabel').textContent = 'Offline-ready'; $('#connectionDot').classList.remove('online'); }); if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js'); }
 init();
