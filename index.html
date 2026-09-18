@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#123c35" />
+  <meta name="description" content="RSM Classic Hub arrival console" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="stylesheet" href="styles.css" />
+  <title>RSM Classic · Hub Arrival</title>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark">RSM</span><span>Classic Hub</span></div>
+    <div class="topbar-actions"><span class="connection-dot" id="connectionDot"></span><span id="connectionLabel">Offline-ready</span><button class="icon-button" id="neutralButton" title="Show neutral screen">◐</button></div>
+  </header>
+  <main id="app" class="app-shell">
+    <section class="page-heading">
+      <div><p class="eyebrow">Friday · November 13, 2026</p><h1>Hub arrival console</h1><p class="muted">Sea Island · Gallery 1</p></div>
+      <div class="sync-status"><span id="syncCount">0</span> pending sync</div>
+    </section>
+    <section class="metrics" aria-label="Session summary"><div><strong id="readyCount">0</strong><span>Today’s sessions</span></div><div><strong id="arrivedCount">0</strong><span>Arrived</span></div><div><strong id="nextCountdown">—</strong><span>Next arrival</span></div></section>
+    <div class="toolbar"><label class="search"><span>⌕</span><input id="searchInput" type="search" placeholder="Find an organization" aria-label="Find an organization" /></label><select id="filterSelect" aria-label="Filter sessions"><option value="all">All sessions</option><option value="upcoming">Upcoming</option><option value="arrived">Arrived</option></select></div>
+    <section id="sessionList" class="session-list" aria-live="polite"></section>
+  </main>
+  <div id="modalRoot"></div>
+  <div id="toast" class="toast" role="status"></div>
+  <script src="app.js" type="module"></script>
+</body>
+</html>
