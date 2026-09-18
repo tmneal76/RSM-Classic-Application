@@ -15,6 +15,7 @@ The `feature/hub-arrival-vertical-slice` branch contains:
 - Owner/date completeness validation
 - Structurally separate client-safe recap and internal brief
 - Explicit human approval before closeout submission
+- Daily Debrief with open commitments, ownership gaps and insight roll-up
 
 Run locally with a web server because ES modules and service workers require HTTP:
 
