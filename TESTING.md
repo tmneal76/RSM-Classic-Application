@@ -11,6 +11,7 @@ This project uses Node's built-in test runner (`node --test`) and exercises the 
 - `validation.js`
 - `role-policy.js`
 - `test/validation.test.js`
+- `test/browser-smoke.test.js`
 
 The GitHub Actions workflow at `.github/workflows/validate.yml` runs on pushes to `main`, feature branches, and pull requests.
 
@@ -22,6 +23,8 @@ Current coverage includes:
 - closeout approval requirements
 - operating-role registry and field access rules
 - invalid-role guard behavior
+- browser-style offline queue handling
+- service-worker install and cached fetch flow
 
 For browser smoke testing, serve the app locally:
 
