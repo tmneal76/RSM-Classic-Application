@@ -1,0 +1,9 @@
+{
+  "name": "RSM Classic Hub",
+  "short_name": "RSM Hub",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#f5f7f4",
+  "theme_color": "#123c35",
+  "icons": []
+}
