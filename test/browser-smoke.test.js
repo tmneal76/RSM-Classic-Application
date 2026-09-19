@@ -82,12 +82,18 @@ test('service worker install and fetch flow work for cached app assets', async (
       return ['legacy-cache', 'rsm-hub-v2'];
     },
     async delete(key) {
-      if (key === 'legacy-cache') return true;
       return true;
     },
   };
 
   const installEvent = {
+    waitUntil(promise) {
+      this._waitUntil = promise;
+      return promise;
+    },
+  };
+
+  const activateEvent = {
     waitUntil(promise) {
       this._waitUntil = promise;
       return promise;
@@ -114,6 +120,9 @@ test('service worker install and fetch flow work for cached app assets', async (
   listeners.install(installEvent);
   await installEvent._waitUntil;
   assert.equal(self.skipCalled, true);
+
+  listeners.activate(activateEvent);
+  await activateEvent._waitUntil;
   assert.equal(self.claimed, true);
 
   cacheStore.set('/index.html', { ok: true, url: '/index.html' });
