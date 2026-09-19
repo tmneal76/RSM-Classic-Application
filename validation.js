@@ -2,7 +2,11 @@ const REQUIRED_SESSION_FIELDS = ['id', 'organization', 'sessionType', 'start', '
 const ALLOWED_CONSENT = new Set(['granted', 'declined']);
 
 export function validateSession(session) {
-  const errors = REQUIRED_SESSION_FIELDS.filter(field => session?.[field] === undefined || session[field] === null || session[field] === '');
+  const errors = REQUIRED_SESSION_FIELDS.flatMap(field =>
+    session?.[field] === undefined || session[field] === null || session[field] === ''
+      ? [`${field} is required`]
+      : []
+  );
   if (session && !Array.isArray(session.participants)) errors.push('participants must be an array');
   if (session && !Array.isArray(session.route)) errors.push('route must be an array');
   if (session?.consent && !ALLOWED_CONSENT.has(session.consent.status)) errors.push('consent.status must be granted or declined');
